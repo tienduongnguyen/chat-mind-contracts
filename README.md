@@ -1,2 +1,4 @@
-Nguyen Quoc Anh
-Nguyen Tien Duong
+## Member
+
+- Nguyen Quoc Anh
+- Nguyen Tien Duong
