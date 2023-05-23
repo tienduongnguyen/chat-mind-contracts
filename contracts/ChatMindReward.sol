@@ -8,20 +8,25 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 contract ChatMindReward is Ownable, ReentrancyGuard {
     event ClaimReward(address indexed account, uint256 amount);
     event UpdateActiveReward(address[] indexed accounts, uint256[] amounts);
-    event UpdateActivePoints(address[] indexed accounts, uint256[] points);
     event UpdateAdmin(address indexed admin);
+    event UpdateTotalReward(uint256 indexed totalReward);
     event BlockUser(address indexed account);
     event UnblockUser(address indexed account);
 
-    mapping(address => uint256) private _activePoints;
     mapping(address => uint256) private _activeReward;
     mapping(address => bool) private _isBlocked;
+
+    uint256 private _totalReward;
+    uint256 private _lastUpdate;
+    uint256 private _oneDay = 86400;
+
     address private _admin;
     ERC20 private _chatMind;
 
     constructor(address chatMind, address admin) {
         _admin = admin;
         _chatMind = ERC20(chatMind);
+        _lastUpdate = block.timestamp;
     }
 
     function claimReward() external nonReentrant {
@@ -31,7 +36,6 @@ contract ChatMindReward is Ownable, ReentrancyGuard {
         require(balanceOfPool() >= reward, "Pool is exhausted");
         _chatMind.transferFrom(_admin, msg.sender, reward);
         resetActiveReward(msg.sender);
-        resetActivePoints(msg.sender);
 
         emit ClaimReward(msg.sender, reward);
     }
@@ -47,6 +51,15 @@ contract ChatMindReward is Ownable, ReentrancyGuard {
         emit UpdateAdmin(newAdmin);
     }
 
+    function setTotalReward(uint256 totalReward) public onlyOwner {
+        _totalReward = totalReward;
+        emit UpdateTotalReward(totalReward);
+    }
+
+    function getTotalReward() public view returns (uint256) {
+        return _totalReward;
+    }
+
     function increaseActiveReward(address account, uint256 amount) internal {
         _activeReward[account] += amount;
     }
@@ -59,35 +72,34 @@ contract ChatMindReward is Ownable, ReentrancyGuard {
         return _activeReward[account];
     }
 
-    function increaseActivePoints(address account, uint256 points) internal {
-        _activePoints[account] += points;
-    }
-
-    function resetActivePoints(address account) internal {
-        _activePoints[account] = 0;
-    }
-
-    function getActivePoints(address account) public view returns (uint256) {
-        return _activePoints[account];
-    }
-
     function increaseBatch(
         address[] memory accounts,
-        uint256[] memory activeReward,
         uint256[] memory activePoints
     ) public onlyOwner {
         require(
-            accounts.length == activeReward.length &&
-                accounts.length == activePoints.length,
+            accounts.length == activePoints.length,
             "Array length mismatch"
         );
-        for (uint i = 0; i < accounts.length; i++) {
-            increaseActiveReward(accounts[i], activeReward[i]);
-            increaseActivePoints(accounts[i], activePoints[i]);
+        require(block.timestamp - _lastUpdate >= _oneDay, "Already icreased");
+        _lastUpdate = block.timestamp;
+
+        uint256 totalPoint = 0;
+
+        for (uint256 i = 0; i < activePoints.length; i++) {
+            totalPoint += activePoints[i];
         }
 
-        emit UpdateActiveReward(accounts, activeReward);
-        emit UpdateActivePoints(accounts, activePoints);
+        uint256 totalReward = getTotalReward();
+        uint256 rewardEachPoint = totalReward / totalPoint;
+        uint256[] memory activeRewards = new uint256[](accounts.length);
+
+        for (uint256 i = 0; i < accounts.length; i++) {
+            uint256 activeReward = rewardEachPoint * activePoints[i];
+            increaseActiveReward(accounts[i], activeReward);
+            activeRewards[i] = activeReward;
+        }
+
+        emit UpdateActiveReward(accounts, activeRewards);
     }
 
     function blockUser(address account) public onlyOwner {
